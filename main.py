@@ -12,6 +12,7 @@ app = FastAPI(title="Trinity API", version="0.1.0")
 _cors_env = os.environ.get("CORS_ORIGINS", "*")
 allow_origins = ["*"] if _cors_env.strip() == "*" else [o.strip() for o in _cors_env.split(",") if o.strip()]
 
+# Load environment variables from .env if present
 load_dotenv()
 
 app.add_middleware(
@@ -28,28 +29,53 @@ def read_root():
     return {"message": "Trinity FastAPI is running."}
 
 
+@app.get("/health")
+def health_get():
+    return {"status": "ok"}
+
+
 @app.post("/health")
-def health(request: Request):
+async def health_post(request: Request):
     url = os.getenv("URL")
-    params = {
-        "shipmentId": request.query_params.get("shipmentId"),
-        "mcNumber": request.query_params.get("mcNumber"),
-        "dotNumber": request.query_params.get("dotNumber"),
-        "contactName": request.query_params.get("contactName"),
-        "contactPhoneNumber": request.query_params.get("contactPhoneNumber"),
-        "currentCity": request.query_params.get("currentCity"),
-        "currentState": request.query_params.get("currentState"),
-        "note": request.query_params.get("note"),
-        "offeredRate": request.query_params.get("offeredRate"),
-        "callRate": request.query_params.get("callRate")
-    }
+    if not url:
+        return {"status": 500, "ok": False, "error": "URL is not configured"}
+
+    # Accept JSON body first; fall back to query params for compatibility
     try:
-        response = requests.post(url, json=params, headers={"Content-Type": "application/json"})
-        print(response.status_code)
-        return {"status": response.status_code}
+        payload = await request.json()
+    except Exception:
+        payload = dict(request.query_params)
+
+    headers = {"Content-Type": "application/json"}
+
+    # Optional authorization mechanisms via environment variables
+    # - AUTH_BEARER -> sets Authorization: Bearer <token>
+    # - API_KEY (+ optional API_KEY_HEADER_NAME, default X-API-KEY)
+    # - BASIC_USER/BASIC_PASS for HTTP Basic auth
+    bearer_token = os.getenv("AUTH_BEARER")
+    api_key = os.getenv("API_KEY")
+    api_key_header_name = os.getenv("API_KEY_HEADER_NAME", "X-API-KEY")
+    basic_user = os.getenv("BASIC_USER")
+    basic_pass = os.getenv("BASIC_PASS")
+
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    if api_key:
+        headers[api_key_header_name] = api_key
+
+    auth = None
+    if basic_user and basic_pass:
+        auth = (basic_user, basic_pass)
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, auth=auth, timeout=30)
+        try:
+            response_body = response.json()
+        except Exception:
+            response_body = response.text
+        return {"status": response.status_code, "ok": response.ok, "body": response_body}
     except Exception as e:
-        print(e)
-        return {"status": response.status_code}
+        return {"status": 500, "ok": False, "error": str(e)}
 
 
 @app.get("/env")
