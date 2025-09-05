@@ -28,7 +28,7 @@ def read_root():
     return {"message": "Trinity FastAPI is running."}
 
 
-@app.get("/health")
+@app.post("/health")
 def health(request: Request):
     url = os.getenv("URL")
     params = {
