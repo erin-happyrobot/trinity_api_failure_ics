@@ -47,7 +47,7 @@ async def health_post(request: Request):
         payload = dict(request.query_params)
 
     API_TOKEN = os.getenv("API_TOKEN")
-    headers = {"Content-Type": "application/json", "API-Token": API_TOKEN}
+    headers = {"API-Token": API_TOKEN}
 
 
     try:
