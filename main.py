@@ -48,14 +48,19 @@ async def health_post(request: Request):
         payload = dict(request.query_params)
 
     API_TOKEN = os.getenv("API_TOKEN")
+    # Strip accidental surrounding quotes from .env values
+    if API_TOKEN and ((API_TOKEN.startswith('"') and API_TOKEN.endswith('"')) or (API_TOKEN.startswith("'") and API_TOKEN.endswith("'"))):
+        API_TOKEN = API_TOKEN[1:-1]
     AUTH_HEADER_NAME = os.getenv("AUTH_HEADER_NAME", "API-Token")
     AUTH_SCHEME = os.getenv("AUTH_SCHEME")  # e.g., "Bearer" or "Token"
     API_TOKEN_QUERY_PARAM = os.getenv("API_TOKEN_QUERY_PARAM")
     ACCEPT = os.getenv("ACCEPT", "application/json")
     EXTRA_HEADER_NAME = os.getenv("EXTRA_HEADER_NAME")
     EXTRA_HEADER_VALUE = os.getenv("EXTRA_HEADER_VALUE")
+    API_TOKEN_BODY_FIELD = os.getenv("API_TOKEN_BODY_FIELD")
+    USE_FORM = os.getenv("USE_FORM", "0") in ("1", "true", "True")
 
-    headers = {"Content-Type": "application/json", "Accept": ACCEPT}
+    headers = {"Accept": ACCEPT}
     if API_TOKEN:
         if AUTH_SCHEME:
             headers["Authorization"] = f"{AUTH_SCHEME} {API_TOKEN}"
@@ -72,8 +77,18 @@ async def health_post(request: Request):
         url = urlunparse(parsed._replace(query=urlencode(query)))
 
 
+    # Optionally inject token into body
+    if API_TOKEN and API_TOKEN_BODY_FIELD:
+        if isinstance(payload, dict):
+            payload[API_TOKEN_BODY_FIELD] = API_TOKEN
+
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if USE_FORM:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            response = requests.post(url, data=payload, headers=headers, timeout=30)
+        else:
+            headers["Content-Type"] = "application/json"
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
         try:
             response_body = response.json()
         except Exception:
@@ -84,11 +99,25 @@ async def health_post(request: Request):
             if API_TOKEN
             else None
         )
+        # Sanitize headers we sent for debugging
+        redacted_headers = {}
+        for k, v in headers.items():
+            if k.lower() == "authorization":
+                redacted_headers[k] = v.split(" ")[0] if isinstance(v, str) and " " in v else "set"
+            elif any(s in k.lower() for s in ["key", "token", "secret", "auth"]):
+                redacted_headers[k] = "<redacted>"
+            else:
+                redacted_headers[k] = v
+        www_auth = response.headers.get("www-authenticate") or response.headers.get("WWW-Authenticate")
         return {
             "status": response.status_code,
             "ok": response.ok,
             "body": response_body,
             "usedAuth": auth_hint,
+            "wwwAuthenticate": www_auth,
+            "requestUrl": url,
+            "requestHeaders": redacted_headers,
+            "usedForm": USE_FORM,
         }
     except Exception as e:
         return {"status": 500, "ok": False, "error": str(e)}
