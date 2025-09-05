@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import requests
 from fastapi import Request
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 
 app = FastAPI(title="Trinity API", version="0.1.0")
@@ -47,7 +48,28 @@ async def health_post(request: Request):
         payload = dict(request.query_params)
 
     API_TOKEN = os.getenv("API_TOKEN")
-    headers = {"API-Token": API_TOKEN}
+    AUTH_HEADER_NAME = os.getenv("AUTH_HEADER_NAME", "API-Token")
+    AUTH_SCHEME = os.getenv("AUTH_SCHEME")  # e.g., "Bearer" or "Token"
+    API_TOKEN_QUERY_PARAM = os.getenv("API_TOKEN_QUERY_PARAM")
+    ACCEPT = os.getenv("ACCEPT", "application/json")
+    EXTRA_HEADER_NAME = os.getenv("EXTRA_HEADER_NAME")
+    EXTRA_HEADER_VALUE = os.getenv("EXTRA_HEADER_VALUE")
+
+    headers = {"Content-Type": "application/json", "Accept": ACCEPT}
+    if API_TOKEN:
+        if AUTH_SCHEME:
+            headers["Authorization"] = f"{AUTH_SCHEME} {API_TOKEN}"
+        else:
+            headers[AUTH_HEADER_NAME] = API_TOKEN
+    if EXTRA_HEADER_NAME and EXTRA_HEADER_VALUE:
+        headers[EXTRA_HEADER_NAME] = EXTRA_HEADER_VALUE
+
+    if API_TOKEN and API_TOKEN_QUERY_PARAM:
+        # Append token to query string if required by upstream
+        parsed = urlparse(url)
+        query = dict(parse_qsl(parsed.query))
+        query[API_TOKEN_QUERY_PARAM] = API_TOKEN
+        url = urlunparse(parsed._replace(query=urlencode(query)))
 
 
     try:
@@ -56,7 +78,18 @@ async def health_post(request: Request):
             response_body = response.json()
         except Exception:
             response_body = response.text
-        return {"status": response.status_code, "ok": response.ok, "body": response_body}
+        # Avoid leaking secrets: only echo which auth method was used
+        auth_hint = (
+            (f"Authorization {AUTH_SCHEME}" if AUTH_SCHEME else f"Header {AUTH_HEADER_NAME}")
+            if API_TOKEN
+            else None
+        )
+        return {
+            "status": response.status_code,
+            "ok": response.ok,
+            "body": response_body,
+            "usedAuth": auth_hint,
+        }
     except Exception as e:
         return {"status": 500, "ok": False, "error": str(e)}
 
