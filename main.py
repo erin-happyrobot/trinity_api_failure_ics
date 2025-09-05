@@ -37,9 +37,11 @@ def health_get():
 
 @app.post("/health")
 async def health_post(request: Request):
-    url = os.getenv("URL")
-    if not url:
-        return {"status": 500, "ok": False, "error": "URL is not configured"}
+    environment = os.getenv("ENVIRONMENT")
+    if environment == "STAGE":
+        url = os.getenv("URL_STAGE")
+    else:
+        url = os.getenv("URL")
 
     # Accept JSON body first; fall back to query params for compatibility
     try:
