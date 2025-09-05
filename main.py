@@ -46,29 +46,12 @@ async def health_post(request: Request):
     except Exception:
         payload = dict(request.query_params)
 
-    headers = {"Content-Type": "application/json"}
+    API_TOKEN = os.getenv("API_TOKEN")
+    headers = {"Content-Type": "application/json", "API-Token": API_TOKEN}
 
-    # Optional authorization mechanisms via environment variables
-    # - AUTH_BEARER -> sets Authorization: Bearer <token>
-    # - API_KEY (+ optional API_KEY_HEADER_NAME, default X-API-KEY)
-    # - BASIC_USER/BASIC_PASS for HTTP Basic auth
-    bearer_token = os.getenv("AUTH_BEARER")
-    api_key = os.getenv("API_KEY")
-    api_key_header_name = os.getenv("API_KEY_HEADER_NAME", "X-API-KEY")
-    basic_user = os.getenv("BASIC_USER")
-    basic_pass = os.getenv("BASIC_PASS")
-
-    if bearer_token:
-        headers["Authorization"] = f"Bearer {bearer_token}"
-    if api_key:
-        headers[api_key_header_name] = api_key
-
-    auth = None
-    if basic_user and basic_pass:
-        auth = (basic_user, basic_pass)
 
     try:
-        response = requests.post(url, json=payload, headers=headers, auth=auth, timeout=30)
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         try:
             response_body = response.json()
         except Exception:
